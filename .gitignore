@@ -1,0 +1,24 @@
+# 构建产物
+build/
+build-*/
+.cache/
+
+# 编辑器 / 工具
+.clangd
+.vscode/
+.ruff_cache/
+__pycache__/
+*.pyc
+
+# 参考代码与临时文件
+temp/
+
+# 辨识采集数据与曲线
+ident_capture.csv
+ident_curve.png
+
+# 本地配置
+*.local.json
+.DS_Store
+*.swp
+*.swo

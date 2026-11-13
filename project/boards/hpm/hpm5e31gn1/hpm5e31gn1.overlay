@@ -1,0 +1,148 @@
+#include <dt-bindings/pinctrl/hpmicro-pinctrl-common.h>
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pwm/pwm.h>
+
+/ {
+	aliases {
+		shell-uart  = &uart0;
+		remote-uart = &uart5;
+
+		user-can0   = &mcan0;
+		user-can1   = &mcan1;
+		user-can2   = &mcan2;
+
+		imu-spi     = &icm42688p;
+
+		buzzer-pwm  = &buzzer_pwm;
+	};
+
+	pwm {
+		compatible = "pwm-leds";
+
+		buzzer_pwm: buzzer_pwm {
+			pwms = <&pwm0 1 PWM_USEC(1000) PWM_POLARITY_NORMAL>;
+			label = "Buzzer";
+			status = "okay";
+		};
+	};
+};
+
+&pinctrl {
+	pinmux_mcan0_txrx: pinmux_mcan0_txrx {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 0), IOC_TYPE_IOC, 0, 7)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 1), IOC_TYPE_IOC, 0, 7)>;
+			input-enable;
+		};
+	};
+
+	pinmux_mcan1_txrx: pinmux_mcan1_txrx {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 5), IOC_TYPE_IOC, 0, 7)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 4), IOC_TYPE_IOC, 0, 7)>;
+			input-enable;
+		};
+	};
+
+	pinmux_mcan2_txrx: pinmux_mcan2_txrx {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTD, 8), IOC_TYPE_IOC, 0, 7)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTD, 9), IOC_TYPE_IOC, 0, 7)>;
+			input-enable;
+		};
+	};
+
+	pinmux_uart5_rx: pinmux_uart5_rx {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTA, 22), IOC_TYPE_IOC, 0, 2)>;
+			input-enable;
+		};
+	};
+
+	pinmux_pwm0_pf1: pinmux_pwm0_pf1 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTF, 1), IOC_TYPE_IOC, 0, 16)>;
+		};
+	};
+
+	pinmux_spi2: pinmux_spi2 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 26), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 27), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 28), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 29), IOC_TYPE_IOC, 0, 5)>;
+			input-enable;
+		};
+	};
+};
+
+&uart0 {
+	pinctrl-0 = <&pinmux_uart0>;
+	pinctrl-names = "default";
+	dmas = <&hdma 0 8>, <&hdma 1 9>;
+	dma-names = "rx", "tx";
+	current-speed = <921600>;
+	status = "okay";
+};
+
+&uart5 {
+	pinctrl-0 = <&pinmux_uart5_rx>;
+	pinctrl-names = "default";
+	dmas = <&hdma 2 0x12>, <&hdma 3 0x13>;
+	dma-names = "rx", "tx";
+	current-speed = <100000>;
+	status = "okay";
+};
+
+&hdma {
+	status = "okay";
+};
+
+&mcan0 {
+	pinctrl-0 = <&pinmux_mcan0_txrx>;
+	pinctrl-names = "default";
+	bitrate = <1000000>;
+	status = "okay";
+};
+
+&mcan1 {
+	pinctrl-0 = <&pinmux_mcan1_txrx>;
+	pinctrl-names = "default";
+	bitrate = <1000000>;
+	status = "okay";
+};
+
+&mcan2 {
+	pinctrl-0 = <&pinmux_mcan2_txrx>;
+	pinctrl-names = "default";
+	bitrate = <1000000>;
+	status = "okay";
+};
+
+&pwm0 {
+	pinctrl-0 = <&pinmux_pwm0_pf1>;
+	pinctrl-names = "default";
+	period-init = <1000>;
+	dead-zone-in-half-cycle = <0>;
+	status = "okay";
+};
+
+&spi2 {
+	pinctrl-0 = <&pinmux_spi2>;
+	pinctrl-names = "default";
+	clocks = <&clk ((276 << 16) | 18) 0 1>;
+	status = "okay";
+
+	icm42688p: icm42688p@0 {
+		compatible = "invensense,icm4268x";
+		reg = <0>;
+		spi-max-frequency = <24000000>;
+		status = "okay";
+	};
+};
+
+&gpiof {
+	pinctrl-0 = <&pinmux_esc_gpio>;
+	pinctrl-names = "default";
+	status = "okay";
+};

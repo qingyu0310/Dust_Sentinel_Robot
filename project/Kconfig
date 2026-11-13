@@ -1,0 +1,131 @@
+# 用户区业务门禁 Kconfig
+# 业务门禁符号（PRJ_MAIN / TRD_XXX / USE_XXX）保持原名，不加 DUST_ 前缀
+# 业务门禁 select 的架构符号统一 DUST_ 前缀
+
+config PRJ_MAIN
+    bool "Main business project"
+    default n
+
+if PRJ_MAIN
+
+# ============================================================================
+
+# =================       功能配置区 — 各模块开关       ========================
+
+config USE_CMD_SHELL
+    bool "Shell debug console (thread + var/log)"
+    default y
+    select DUST_CMD_SHELL_LOG
+    select DUST_CMD_SHELL_VAR
+    help
+      Shell debug console - UART thread + var/log sub-commands.
+      打开需要 overlay 里配 shell-uart 别名，否则 shell.cpp 编译报错。
+
+# ============================================================================
+
+# =================               TRD_XXX                 ====================
+# 新增业务线程时照下面这块追加，并在 project/thread/CMakeLists.txt 加对应 if 块
+#
+# config TRD_XXX
+#     bool "XXX thread"
+#     default n
+#     select DUST_DEV_XXX
+#     help
+#       XXX thread description.
+
+# ============================================================================
+
+# =================               TRD_CAN_TX              ====================
+
+config TRD_CAN_TX
+    bool "CAN TX thread"
+    default y
+    select DUST_COM_CAN
+    select DUST_TPC_TO_CAN_TX
+    help
+      Enable CAN TX thread.
+
+# ============================================================================
+
+# =================               TRD_CHASSIS              ====================
+
+config TRD_CHASSIS
+    bool "Chassis thread"
+    default y
+    select DUST_MOD_DEV_MOTOR_DJI
+    select DUST_CTL_PID
+    select DUST_FLT_LPF
+    select DUST_TPC_TO_CAN_TX
+    select DUST_TPC_REMOTE_TO
+    help
+      Enable omni chassis thread (remote velocity -> inverse kinematics -> C620 current).
+
+# ============================================================================
+
+# =================               TRD_IMU                  ====================
+
+config TRD_YAW
+    bool "Yaw motor initialization"
+    default y
+    select TRD_CAN_TX
+    select DUST_MOD_DEV_MOTOR_DM
+    help
+      Initialize big yaw on CAN1 and small yaw on CAN0, without enabling motors.
+
+config TRD_PITCH
+    bool "Pitch motor initialization"
+    default y
+    select TRD_CAN_TX
+    select DUST_MOD_DEV_MOTOR_DM
+    help
+      Initialize up and down pitch on CAN0.
+
+config TRD_IMU
+    bool "IMU thread"
+    default y
+    select DUST_MOD_DEV_IMU
+    select DUST_MOD_DEV_IMU_ICM42688P
+    help
+      Enable IMU acquisition and attitude publishing thread.
+
+# ============================================================================
+
+# =================               TRD_GPIO                 ====================
+
+config TRD_GPIO
+    bool "GPIO thread task"
+    default n
+    select DUST_DEV_GPIO_OUTPUT
+    select DUST_CTL_TIMER
+    help
+      Enable the GPIO/output indicator thread.
+
+# ============================================================================
+
+# =================              TRD_REMOTE               ====================
+
+config TRD_REMOTE
+    bool "Remote thread"
+    default y
+    select DUST_MOD_DEV_REMOTE
+    select DUST_MOD_DEV_REMOTE_AUTO
+    help
+      Enable remote receiver thread.
+
+# ============================================================================
+
+# =================               TRD_TEST                ====================
+
+config TRD_TEST
+    bool "Motor identification test thread"
+    default n
+    select DUST_MOD_DEV_MOTOR_DJI
+    select DUST_TPC_TO_CAN_TX
+    help
+      Enable the motor step identification test thread.
+
+# ============================================================================
+
+endif # PRJ_MAIN
+
+source "Kconfig.zephyr"
