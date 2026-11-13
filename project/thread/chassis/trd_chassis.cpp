@@ -68,7 +68,7 @@ static TaskResult Task(void* context)
 
 	float current[N_Wheel] {};
 
-	if (msg.chassis_ctrl == topic::remote_to::StartMode::Off)
+	if (msg.robot_ctrl == topic::remote_to::StartMode::Off)
 	{
 		for (uint8_t i = 0; i < N_Wheel; ++i)
 		{

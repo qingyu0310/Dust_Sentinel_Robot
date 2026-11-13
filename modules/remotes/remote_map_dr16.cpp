@@ -21,7 +21,7 @@ namespace dr16 {
 void FillOutputData(const OutputData& in, topic::remote_to::Message& out)
 {
     out.chassis_mode = (in.sw.sw2 == SWITCH_UP) ? topic::remote_to::ChassisMode::Spin : topic::remote_to::ChassisMode::Normal;
-    out.chassis_ctrl = (in.sw.sw1 == SWITCH_UP) ? topic::remote_to::StartMode::Off : topic::remote_to::StartMode::On;
+    out.robot_ctrl   = (in.sw.sw1 == SWITCH_UP) ? topic::remote_to::StartMode::Off 	  : topic::remote_to::StartMode::On;
 }
 
 } // namespace dr16

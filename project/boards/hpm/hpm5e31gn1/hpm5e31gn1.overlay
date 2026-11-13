@@ -12,6 +12,8 @@
 		user-can2   = &mcan2;
 
 		imu-spi     = &icm42688p;
+		imu-pwm     = &imu_pwm;
+		flash-spi   = &w25q128;
 
 		buzzer-pwm  = &buzzer_pwm;
 	};
@@ -22,6 +24,12 @@
 		buzzer_pwm: buzzer_pwm {
 			pwms = <&pwm0 1 PWM_USEC(1000) PWM_POLARITY_NORMAL>;
 			label = "Buzzer";
+			status = "okay";
+		};
+
+		imu_pwm: imu_pwm {
+			pwms = <&pwm0 4 PWM_USEC(1000) PWM_POLARITY_NORMAL>;
+			label = "ICM42688P Heater";
 			status = "okay";
 		};
 	};
@@ -74,6 +82,22 @@
 			input-enable;
 		};
 	};
+
+	pinmux_spi3: pinmux_spi3 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 20), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 21), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 22), IOC_TYPE_IOC, 0, 5)>,
+					 <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTC, 23), IOC_TYPE_IOC, 0, 5)>;
+			input-enable;
+		};
+	};
+
+	pinmux_pwm0_pd4: pinmux_pwm0_pd4 {
+		group0 {
+			pinmux = <HPMICRO_PINMUX(HPMICRO_PIN(HPMICRO_PORTD, 4), IOC_TYPE_IOC, 0, 16)>;
+		};
+	};
 };
 
 &uart0 {
@@ -120,7 +144,7 @@
 };
 
 &pwm0 {
-	pinctrl-0 = <&pinmux_pwm0_pf1>;
+	pinctrl-0 = <&pinmux_pwm0_pf1>, <&pinmux_pwm0_pd4>;
 	pinctrl-names = "default";
 	period-init = <1000>;
 	dead-zone-in-half-cycle = <0>;
@@ -131,6 +155,20 @@
 	pinctrl-0 = <&pinmux_spi2>;
 	pinctrl-names = "default";
 	clocks = <&clk ((276 << 16) | 18) 0 1>;
+	status = "okay";
+
+	w25q128: w25q128@0 {
+		compatible = "winbond,w25q128";
+		reg = <0>;
+		spi-max-frequency = <50000000>;
+		status = "okay";
+	};
+};
+
+&spi3 {
+	pinctrl-0 = <&pinmux_spi3>;
+	pinctrl-names = "default";
+	clocks = <&clk ((277 << 16) | 19) 0 1>;
 	status = "okay";
 
 	icm42688p: icm42688p@0 {

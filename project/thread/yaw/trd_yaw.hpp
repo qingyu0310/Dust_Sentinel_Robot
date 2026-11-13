@@ -22,6 +22,9 @@ constexpr uint16_t kBigYawMasterId = 0x11;
 constexpr uint16_t kSmallYawCanId = 0x03;
 constexpr uint16_t kSmallYawMasterId = 0x13;
 
+constexpr float kGearRatio = 10.0f;		// J4310-2EC 内置减速箱 10:1，同步带 1:1
+constexpr float kControlDT = 0.001f;	// 控制周期 s（Task 1ms）
+
 inline DmMotor big_yaw_motor_{};
 inline DmMotor small_yaw_motor_{};
 
