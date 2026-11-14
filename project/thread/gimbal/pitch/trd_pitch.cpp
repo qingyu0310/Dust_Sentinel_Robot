@@ -144,7 +144,7 @@ static TaskResult Task(void* context)
     const float gravity_torque = GravityTorque(up_now_rad);
     const float up_torque 	   = std::clamp(pid_torque + gravity_torque, -kPitchTorqueMax, kPitchTorqueMax);
 
-    up_pitch_motor_.SetTargetTorque(up_torque);
+    up_pitch_motor_.SetTargetTorque(gravity_torque);
     up_pitch_motor_.PackCtrlFrame(frame);
     gimbal::SendCmd(&user_can0_msgq, kUpPitchCanId, frame);
 

@@ -66,7 +66,7 @@ config TRD_CHASSIS
 
 config TRD_YAW
     bool "Yaw motor initialization"
-    default y
+    default n
     select TRD_CAN_TX
     select DUST_MOD_DEV_MOTOR_DM
     select DUST_MATH_ANGLE
@@ -119,14 +119,11 @@ config TRD_REMOTE
 # =================               TRD_TEST                ====================
 
 config TRD_TEST
-    bool "Up pitch gravity/friction sweep test"
-    default n
-    select TRD_CAN_TX
-    select TRD_PITCH
-    select DUST_MOD_DEV_MOTOR_DM
-    select DUST_CTL_TIMER
+    bool "IMU attitude diagnosis"
+    default y
+    select TRD_IMU
     help
-      Enable the MCU-driven up pitch sweep and PC gravity/friction capture.
+      Enable IMU raw and attitude debug output for drift diagnosis.
 
 # ============================================================================
 

@@ -18,9 +18,15 @@ namespace thread::imu {
 
 static ::imu::ImuManager imu_ {};
 
+// 本颗 IMU 的静态零偏（gyro rad/s，accel m/s^2）
+static constexpr ImuOffsetData kOffset {
+    {0.009049f,  0.011271f, -0.009992f },
+    {-0.420728f, 0.042918f, 1.061736f }
+};
+
 bool thread_init()
 {
-    return imu_.Init(::imu::ImuStartMode::Normal);
+    return imu_.Init(::imu::ImuStartMode::AutoCalib, kOffset);
 }
 
 bool thread_start()
