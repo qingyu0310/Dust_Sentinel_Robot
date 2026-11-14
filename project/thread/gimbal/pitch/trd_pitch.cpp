@@ -13,14 +13,14 @@
 #include <algorithm>
 #include <cmath>
 #include "trd_pitch.hpp"
-#include "trd_pitch_cmd.hpp"
+#include "gimbal.hpp"
+#include "to_can_tx.hpp"
 #include "thread.hpp"
 #include "Init_entry.hpp"
 #include "Irq_handlers.h"
 #include "remote_to.hpp"
 #include "angle.hpp"
 #include "pid.hpp"
-#include "timer.hpp"
 #include "log.hpp"
 #include "var.hpp"
 
@@ -43,22 +43,23 @@ static float GravityTorque(float pitch_rad)
     return scale * (0.041619f * std::sin(pitch_rad) + 0.315195f * std::cos(pitch_rad));
 }
 
+using namespace instance;
 using namespace instance::pitch;
 using namespace alg::math;
 
 static Thread<2048> thread_{};
 
-static alg::pid::Pid up_pid_   {};							// 上 pitch 位置环
+static alg::pid::Pid up_pid_   {};								// 上 pitch 位置环
+static gimbal::DtMeter dt_meter_ {};							// 控制周期测量
 
-static constexpr uint32_t kLostCheckPeriod = 100;			// 掉线检测周期（Task 拍数）
-static Timer lost_timer_ { kLostCheckPeriod };		// 掉线检测分频
+static topic::remote_to::Message remote_ {};					// 遥控最新状态，读失败保留旧值
 
-static bool g_set_zero_up = false;							// 上 pitch 设零请求，执行后自清
+static constexpr uint32_t kLostCheckPeriod = 100;				// 掉线检测周期（Task 拍数）
 
-static constexpr uint32_t kRemoteTimeoutMs = 100;			// 遥控话题超时，超过即判失联
+static gimbal::StallWatch remote_watch_ {};						// 遥控停发检测（默认 100 拍）
+static gimbal::LostWatch  motor_watch_  { kLostCheckPeriod };	// 电机掉线检测
 
-static topic::remote_to::Message remote_    {};				// 遥控最新状态，读失败保留旧值
-static uint32_t                  remote_ms_ = 0;			// 遥控最近一次读取成功时刻
+static bool g_set_zero_up = false;								// 上 pitch 设零请求，执行后自清
 
 /**
  * @brief Retry 钩子：设零与未使能恢复，阻塞等待停稳
@@ -69,34 +70,29 @@ static bool OnRetry(void* context)
 {
     (void)context;
 
-    const uint32_t now = k_uptime_get_32();
-
-    const bool remote_alive = (remote_ms_ != 0) && (now - remote_ms_ < kRemoteTimeoutMs);
-
-    if (!remote_alive || remote_.robot_ctrl == topic::remote_to::StartMode::Off)
+    if (remote_watch_.Timeout() || remote_.robot_ctrl == topic::remote_to::StartMode::Off)
 	{
         uint8_t frame[8];
 
-        DUST_LOG_WRN("pitch disable: alive=%d ctrl=%d now=%u last=%u gap=%u",
-                     static_cast<int>(remote_alive), static_cast<int>(remote_.robot_ctrl),
-                     static_cast<unsigned>(now), static_cast<unsigned>(remote_ms_),
-                     static_cast<unsigned>(now - remote_ms_));
+        DUST_LOG_WRN("pitch disable: stall=%u ctrl=%d ver=%u",
+                     static_cast<unsigned>(remote_watch_.Stall()), static_cast<int>(remote_.robot_ctrl),
+                     static_cast<unsigned>(remote_.version));
         up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::Disable);
-        SendCmd(kUpPitchCanId, frame);
+        gimbal::SendCmd(&user_can0_msgq, kUpPitchCanId, frame);
 
         return true;
     }
 
     if (g_set_zero_up) {
         g_set_zero_up = false;
-        SaveZero();
+        gimbal::SaveZero(up_pitch_motor_, &user_can0_msgq, kUpPitchCanId);
         return true;
     }
 
-    if (!Enabled())
+    if (!gimbal::Enabled(up_pitch_motor_))
 	{
         DUST_LOG_WRN("pitch not enabled: err=%d", static_cast<int>(up_pitch_motor_.ReadAll().err));
-        if (Enable()) {
+        if (gimbal::Enable(up_pitch_motor_, &user_can0_msgq, kUpPitchCanId)) {
             DUST_LOG_INF("pitch re-enabled");
         }
     }
@@ -113,59 +109,25 @@ static TaskResult Task(void* context)
 {
     (void)context;
 
-    // cycle 只用于相邻两拍求差算控制周期，不回绕成绝对时间
-    float dt = 0.001f;
-
-    const auto kMeasureDT = [&]()
-    {
-        static uint32_t last_cycle = 0;
-        const uint32_t now_cycle = k_cycle_get_32();
-
-        // 用真实经过时间算控制周期，避免 D 项按固定 1ms 计算而虚高数倍
-        dt = 0.001f;
-        if (last_cycle != 0) {
-            const uint64_t delta_ns = k_cyc_to_ns_floor64(now_cycle - last_cycle);
-            if (delta_ns != 0) {
-                // Retry 路径会阻塞 1s，钳位避免单拍积分突跳
-                dt = std::clamp(static_cast<float>(delta_ns) * 1.0e-9f, 0.0001f, 0.01f);
-            }
-        }
-        last_cycle = now_cycle;
-    };
-
-    kMeasureDT();
-
-    // 话题超时用内核累计毫秒，单调递增不受硬件计数器回绕影响
-    const uint32_t now = k_uptime_get_32();
+    const float dt = dt_meter_.Update();
 
     // 直接读话题：每拍取最新状态，不积压历史通知；读失败保留上一帧值
+    zbus_chan_read(&pub_remote_to, &remote_, K_NO_WAIT);
 
-    if (zbus_chan_read(&pub_remote_to, &remote_, K_NO_WAIT) == 0) {
-        remote_ms_ = now;
-    }
-
-    // 输入超时或整车关闭：处置交给 OnRetry
-    const bool remote_alive = (remote_ms_ != 0) && (now - remote_ms_ < kRemoteTimeoutMs);
-
-    if (!remote_alive || remote_.robot_ctrl == topic::remote_to::StartMode::Off) {
+    // 输入停更或整车关闭：处置交给 OnRetry
+    if (remote_watch_.Update(remote_.version) || remote_.robot_ctrl == topic::remote_to::StartMode::Off) {
         return TaskResult::Retry;
     }
 
-    if (g_set_zero_up || !Enabled()) {
+    if (g_set_zero_up || !gimbal::Enabled(up_pitch_motor_)) {
         return TaskResult::Retry;
     }
 
     // 窗口滑窗检测掉线：flag_ 与 pre_flag_ 相等即本拍无新反馈，按周期分频检查
 
-    lost_timer_.Update();
-    if (lost_timer_.IsFinish())
-	{
-        const bool up_lost = up_pitch_motor_.PwrLossCheck();
-
-        if (up_lost) {
-            DUST_LOG_ERR("pitch lost: up=%d", static_cast<int>(up_lost));
-            return TaskResult::Retry;
-        }
+    if (motor_watch_.Update(up_pitch_motor_)) {
+        DUST_LOG_ERR("pitch lost");
+        return TaskResult::Retry;
     }
 
     uint8_t frame[8];
@@ -184,7 +146,7 @@ static TaskResult Task(void* context)
 
     up_pitch_motor_.SetTargetTorque(up_torque);
     up_pitch_motor_.PackCtrlFrame(frame);
-    SendCmd(kUpPitchCanId, frame);
+    gimbal::SendCmd(&user_can0_msgq, kUpPitchCanId, frame);
 
     DUST_LOG_DBG("pitch_track", "%.2f,%.2f,%.3f", static_cast<double>(up_target_deg), static_cast<double>(snap.angle), static_cast<double>(snap.torque));
 

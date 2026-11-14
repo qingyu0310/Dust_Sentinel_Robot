@@ -28,25 +28,25 @@ if(CONFIG_TRD_CHASSIS)
 	)
 endif()
 
+# 云台公共命令：pitch / yaw 任一启用就需要
+if(CONFIG_TRD_YAW OR CONFIG_TRD_PITCH)
+	target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gimbal/gimbal.cpp)
+	target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gimbal)
+endif()
+
 if(CONFIG_TRD_YAW)
 	target_sources(app PRIVATE
-		${CMAKE_CURRENT_SOURCE_DIR}/yaw/trd_yaw.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/yaw/trd_yaw_cmd.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/yaw/trd_yaw_coop.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/gimbal/yaw/trd_yaw.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/gimbal/yaw/trd_yaw_coop.cpp
 	)
-	target_include_directories(app PRIVATE
-		${CMAKE_CURRENT_SOURCE_DIR}/yaw
-	)
+	target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gimbal/yaw)
 endif()
 
 if(CONFIG_TRD_PITCH)
 	target_sources(app PRIVATE
-		${CMAKE_CURRENT_SOURCE_DIR}/pitch/trd_pitch.cpp
-		${CMAKE_CURRENT_SOURCE_DIR}/pitch/trd_pitch_cmd.cpp
+		${CMAKE_CURRENT_SOURCE_DIR}/gimbal/pitch/trd_pitch.cpp
 	)
-	target_include_directories(app PRIVATE
-		${CMAKE_CURRENT_SOURCE_DIR}/pitch
-	)
+	target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/gimbal/pitch)
 endif()
 
 if(CONFIG_TRD_IMU)

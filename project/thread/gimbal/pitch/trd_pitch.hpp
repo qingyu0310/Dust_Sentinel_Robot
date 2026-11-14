@@ -25,6 +25,6 @@ constexpr float    kPitchTorqueMax    = 3.0f;		// pitch 峰值力矩 N*m
 constexpr float    kUpPitchMinDeg     = -10.0f;		// 上 pitch 机械下限（度）
 constexpr float    kUpPitchMaxDeg     =  40.0f;		// 上 pitch 机械上限（度）
 
-inline DmMotor up_pitch_motor_  {};
+inline    DmMotor  up_pitch_motor_  {};
 
 } // namespace instance::pitch
