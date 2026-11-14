@@ -1,0 +1,95 @@
+--- a/framework/shell/shell.cpp
++++ b/framework/shell/shell.cpp
+@@ -94,47 +94,58 @@
+ TaskResult Shell::Task(void *context)
+ {
+     (void)context;
++    k_sem_take(&stream_->sem_, K_FOREVER);
+ 
+-    k_sem_take(&stream_->sem_, K_FOREVER);         // 通道事件：接收数据 OR 日志发送需要驱动
++    // Process commands before log formatting; both paths have a bounded budget.
++    constexpr unsigned kRxBlocksPerTurn = 4;
++    constexpr unsigned kLogRecordsPerTurn = 4;
++    bool rx_budget_used = false;
++    for (unsigned block = 0; block < kRxBlocksPerTurn; ++block)
++    {
++        uint8_t buf[32];
++        const uint16_t n = stream_->Read(buf, sizeof(buf));
++        if (n == 0) break;
++        for (uint16_t i = 0; i < n; i++)
++        {
++            uint8_t ch = buf[i];
+ 
+-    Log::SendNextFrameIfIdle();                   				// 先驱动日志发送（DMA 空闲则续发）
++            if (ch == '\r' || ch == '\n')
++            {
++                line_buf_[line_pos_] = 0;
++                if (line_pos_ > 0)
++                {
++                    ProcessLine(line_buf_);
++                }
++                line_pos_ = 0;
++                continue;
++            }
+ 
+-    while (Log::FormatOnePendingRecord())         				// 出队参数快照请求 → 展开入帧池 → 泵
++            if (ch == '\b' || ch == 0x7F)
++            {
++                if (line_pos_ > 0) line_pos_--;
++                continue;
++            }
++
++            if (line_pos_ < kLineBufSize - 1)
++            {
++                line_buf_[line_pos_++] = ch;
++            }
++        }
++
++        rx_budget_used = block + 1 == kRxBlocksPerTurn;
++    }
++
++    Log::SendNextFrameIfIdle();
++    unsigned formatted = 0;
++    for (; formatted < kLogRecordsPerTurn; ++formatted)
+     {
++        if (!Log::FormatOnePendingRecord()) break;
+         Log::SendNextFrameIfIdle();
+     }
+-
+-    uint8_t  buf[32];
+-    uint16_t n = stream_->Read(buf, sizeof(buf));
+-    if (n == 0) return TaskResult::Continue;       // 发送唤醒，无接收数据
+-
+-    for (uint16_t i = 0; i < n; i++)
+-    {
+-        uint8_t ch = buf[i];
+-
+-        if (ch == '\r' || ch == '\n')
+-        {
+-            line_buf_[line_pos_] = 0;
+-            if (line_pos_ > 0)
+-            {
+-                ProcessLine(line_buf_);
+-            }
+-            line_pos_ = 0;
+-            continue;
+-        }
+-
+-        if (ch == '\b' || ch == 0x7F)
+-        {
+-            if (line_pos_ > 0) line_pos_--;
+-            continue;
+-        }
+-
+-        if (line_pos_ < kLineBufSize - 1)
+-        {
+-            line_buf_[line_pos_++] = ch;
+-        }
++    // Preserve progress for any data left after a coalesced wakeup.
++    if (rx_budget_used || formatted == kLogRecordsPerTurn) {
++        k_sem_give(&stream_->sem_);
+     }
+-
+     return TaskResult::Continue;
+ }
+ 

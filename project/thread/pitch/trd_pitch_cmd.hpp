@@ -1,9 +1,9 @@
 /**
  * @file trd_pitch_cmd.hpp
  * @author qingyu
- * @brief pitch 达妙电机命令处理：使能、清错、设零
- * @version 0.1
- * @date 2026-11-13
+ * @brief 上 pitch 达妙电机命令处理：使能、清错、设零
+ * @version 0.2
+ * @date 2026-11-14
  *
  * @copyright Copyright (c) 2026
  *
@@ -23,21 +23,20 @@ namespace instance::pitch {
 void SendCmd(uint16_t can_id, const uint8_t (&data)[8]);
 
 /**
- * @brief 使能两台 pitch：清错误 → 等 1s → 读状态确认 → 使能 → 等 1s
+ * @brief 使能上 pitch：清错误 → 等 1s → 读状态确认 → 使能 → 等 1s
  * @return true=已使能；false=清错未生效或使能失败
  */
-bool EnableBoth();
+bool Enable();
 
 /**
  * @brief 下发设零并等 1s 停稳
- * @param up  true=上 pitch，false=下 pitch
  */
-void SaveZero(bool up);
+void SaveZero();
 
 /**
- * @brief 两台 pitch 是否都处于使能态
- * @return true=都已使能
+ * @brief 上 pitch 是否处于使能态
+ * @return true=已使能
  */
-bool BothEnabled();
+bool Enabled();
 
 } // namespace instance::pitch

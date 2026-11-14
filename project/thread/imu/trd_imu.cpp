@@ -20,7 +20,7 @@ static ::imu::ImuManager imu_ {};
 
 bool thread_init()
 {
-    return imu_.Init(::imu::ImuStartMode::AutoCalib);
+    return imu_.Init(::imu::ImuStartMode::Normal);
 }
 
 bool thread_start()
@@ -29,6 +29,6 @@ bool thread_start()
 }
 
 REGISTER_INIT(thread_init, EarlyInit, High, HaltOnFail, nullptr, "imu_init");
-REGISTER_THREAD(thread_start, LateThread, HaltOnFail, "imu_start");
+REGISTER_THREAD(thread_start, EarlyThread, HaltOnFail, "imu_start");
 
 } // namespace thread::imu

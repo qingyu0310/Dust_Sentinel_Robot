@@ -26,9 +26,12 @@ static constexpr uint32_t kSettleMs = 1000;		// 命令之间的等待
  */
 void SendCmd(uint16_t can_id, const uint8_t (&data)[8])
 {
+    static uint32_t tx_seq = 0;
+
     topic::to_can_tx::Message msg{};
 
-    msg.tx_id = can_id;
+    msg.tx_id   = can_id;
+    msg.version = ++tx_seq;
     memcpy(msg.data, data, 8);
 
     k_msgq_put((can_id == kBigYawCanId) ? &user_can1_msgq : &user_can0_msgq, &msg, K_NO_WAIT);

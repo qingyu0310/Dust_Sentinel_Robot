@@ -7,3 +7,7 @@
 # 	target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/check/xxx/xxx.cpp)
 # 	target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/check/xxx)
 # endif()
+
+if(CONFIG_DUST_MATH_ANGLE)
+	target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/math/angle)
+endif()

@@ -40,19 +40,18 @@ static TaskResult Task(void* context)
 
 	topic::to_can_tx::Message msg{};
 
-	if (k_msgq_get(&user_can1_msgq, &msg, K_FOREVER) != 0) {
-		return TaskResult::Continue;
-	}
+	while (k_msgq_get(&user_can1_msgq, &msg, K_NO_WAIT) == 0)
+	{
+		can_frame tx {
+			.id = msg.tx_id,
+			.dlc = 8,
+		};
 
-	can_frame tx {
-		.id = msg.tx_id,
-		.dlc = 8,
-	};
+		std::memcpy(tx.data, msg.data, 8);
 
-	std::memcpy(tx.data, msg.data, 8);
-
-	if (!user_can1.Send(&tx)) {
-		DUST_LOG_ERR("can1 tx fail id=0x%x", static_cast<unsigned>(tx.id));
+		if (!user_can1.Send(&tx, K_MSEC(1))) {
+			DUST_LOG_ERR("can1 tx fail id=0x%x", static_cast<unsigned>(tx.id));
+		}
 	}
 
 	return TaskResult::Continue;
@@ -69,19 +68,19 @@ static TaskResult TaskCan0(void* context)
 
 	topic::to_can_tx::Message msg{};
 
-	if (k_msgq_get(&user_can0_msgq, &msg, K_FOREVER) != 0) {
-		return TaskResult::Continue;
-	}
+	while (k_msgq_get(&user_can0_msgq, &msg, K_NO_WAIT) == 0)
+	{
+		can_frame tx {
+			.id = msg.tx_id,
+			.dlc = 8,
+		};
 
-	can_frame tx {
-		.id = msg.tx_id,
-		.dlc = 8,
-	};
+		std::memcpy(tx.data, msg.data, 8);
 
-	std::memcpy(tx.data, msg.data, 8);
-
-	if (!user_can0.Send(&tx)) {
-		DUST_LOG_ERR("can0 tx fail id=0x%x", static_cast<unsigned>(tx.id));
+		const bool sent = user_can0.Send(&tx, K_MSEC(1));
+		if (!sent) {
+			DUST_LOG_ERR("can0 tx fail id=0x%x", static_cast<unsigned>(tx.id));
+		}
 	}
 
 	return TaskResult::Continue;

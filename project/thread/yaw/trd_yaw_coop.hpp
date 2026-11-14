@@ -11,12 +11,14 @@
 
 #pragma once
 
+#include "angle.hpp"
+
 namespace instance::yaw {
 
-constexpr float kSmallSoftLimitRad = 45.0f * 0.017453293f;		// 小 yaw 软限 ±45°
-constexpr float kSmallHardLimitRad = 50.0f * 0.017453293f;		// 小 yaw 硬限 ±50°
-constexpr float kYawRateLimitRad   = 3.14159265f;				// 遥控打满的世界角速度 rad/s
-constexpr float kYawTorqueMax      = 1.0f;						// yaw 峰值力矩 N*m
+constexpr float kSmallSoftLimitRad = 45.0f * alg::math::kDegToRad;		// 小 yaw 软限 ±45°
+constexpr float kSmallHardLimitRad = 50.0f * alg::math::kDegToRad;		// 小 yaw 硬限 ±50°
+constexpr float kYawRateLimitRad   = alg::math::kPi;					// 遥控打满的世界角速度 rad/s
+constexpr float kYawTorqueMax      = 1.0f;								// yaw 峰值力矩 N*m
 
 /**
  * @brief 世界角分配器
@@ -49,13 +51,6 @@ public:
                 float big_joint, float small_joint,
                 float dt,
                 float& big_target, float& small_target, float& world_target);
-
-    /**
-     * @brief 角度归一化到 [-π, π]
-     * @param a 输入角 rad
-     * @return 归一化角 rad
-     */
-    static float Wrap(float a);
 
 private:
     float world_ref_ = 0.0f;		// 世界目标角 rad

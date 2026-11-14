@@ -66,17 +66,19 @@ config TRD_CHASSIS
 
 config TRD_YAW
     bool "Yaw motor initialization"
-    default y
+    default n
     select TRD_CAN_TX
     select DUST_MOD_DEV_MOTOR_DM
+    select DUST_MATH_ANGLE
     help
       Initialize big yaw on CAN1 and small yaw on CAN0, without enabling motors.
 
 config TRD_PITCH
-    bool "Pitch motor initialization"
+    bool "Down pitch motor initialization"
     default y
     select TRD_CAN_TX
     select DUST_MOD_DEV_MOTOR_DM
+    select DUST_MATH_ANGLE
     help
       Initialize up and down pitch on CAN0.
 
@@ -117,12 +119,14 @@ config TRD_REMOTE
 # =================               TRD_TEST                ====================
 
 config TRD_TEST
-    bool "Motor identification test thread"
+    bool "Up pitch gravity/friction sweep test"
     default n
-    select DUST_MOD_DEV_MOTOR_DJI
-    select DUST_TPC_TO_CAN_TX
+    select TRD_CAN_TX
+    select TRD_PITCH
+    select DUST_MOD_DEV_MOTOR_DM
+    select DUST_CTL_TIMER
     help
-      Enable the motor step identification test thread.
+      Enable the MCU-driven up pitch sweep and PC gravity/friction capture.
 
 # ============================================================================
 

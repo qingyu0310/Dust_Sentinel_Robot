@@ -8,3 +8,9 @@
 #     default n
 #     help
 #       XXX 说明。
+
+config DUST_MATH_ANGLE
+    bool "angle wrap"
+    default n
+    help
+      角度归一化（WrapRad / WrapDeg）。

@@ -11,24 +11,13 @@
 
 #include <algorithm>
 #include "trd_yaw_coop.hpp"
+#include "angle.hpp"
 
 #pragma message "Compiling Thread/Yaw/Coop"
 
 namespace instance::yaw {
 
-static constexpr float kPi = 3.14159265f;
-
-/**
- * @brief 角度归一化到 [-π, π]
- * @param a 输入角 rad
- * @return 归一化角 rad
- */
-float Coop::Wrap(float a)
-{
-    while (a >  kPi) a -= 2.0f * kPi;
-    while (a < -kPi) a += 2.0f * kPi;
-    return a;
-}
+using namespace alg::math;
 
 /**
  * @brief 初始化：两轴参考取当前实际关节角
@@ -37,8 +26,8 @@ float Coop::Wrap(float a)
  */
 void Coop::Init(float big_joint, float world_yaw)
 {
-    world_ref_ = Wrap(world_yaw);
-    big_ref_   = Wrap(big_joint);
+    world_ref_ = WrapRad(world_yaw);
+    big_ref_   = WrapRad(big_joint);
 }
 
 /**
@@ -58,21 +47,21 @@ void Coop::Update(float remote_yaw,  float world_yaw,
                   float& big_target, float& small_target, float& world_target)
 {
     // 世界目标角速度积分成世界目标角
-    world_ref_ = Wrap(world_ref_ + remote_yaw * kYawRateLimitRad * dt);
+    world_ref_ = WrapRad(world_ref_ + remote_yaw * kYawRateLimitRad * dt);
 
     // 底盘朝向：IMU 世界角减两轴关节角
-    const float base     = Wrap(world_yaw - big_joint - small_joint);
-    const float body_ref = Wrap(world_ref_ - base);
+    const float base     = WrapRad(world_yaw - big_joint - small_joint);
+    const float body_ref = WrapRad(world_ref_ - base);
 
     // 目标需求给到小轴；超出软限的部分推给大轴参考
-    const float small_required  = Wrap(body_ref - big_ref_);
+    const float small_required  = WrapRad(body_ref - big_ref_);
     const float small_allocated = std::clamp(small_required, -kSmallSoftLimitRad, kSmallSoftLimitRad);
     const float excess          = small_required - small_allocated;
 
     if (excess != 0.0f) {
         big_ref_ += excess;
     }
-    big_ref_ = Wrap(big_ref_);
+    big_ref_ = WrapRad(big_ref_);
 
     big_target   = big_ref_;
     small_target = small_allocated;

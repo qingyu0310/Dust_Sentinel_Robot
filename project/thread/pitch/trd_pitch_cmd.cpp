@@ -1,9 +1,9 @@
 /**
  * @file trd_pitch_cmd.cpp
  * @author qingyu
- * @brief pitch 达妙电机命令处理：使能、清错、设零
- * @version 0.1
- * @date 2026-11-13
+ * @brief 上 pitch 达妙电机命令处理：使能、清错、设零
+ * @version 0.2
+ * @date 2026-11-14
  *
  * @copyright Copyright (c) 2026
  *
@@ -26,82 +26,78 @@ static constexpr uint32_t kSettleMs = 1000;		// 命令之间的等待
  */
 void SendCmd(uint16_t can_id, const uint8_t (&data)[8])
 {
+    static uint32_t tx_seq = 0;
+
     topic::to_can_tx::Message msg{};
 
-    msg.tx_id = can_id;
+    msg.tx_id   = can_id;
+    msg.version = ++tx_seq;
     memcpy(msg.data, data, 8);
 
-    k_msgq_put(&user_can0_msgq, &msg, K_NO_WAIT);
+    const int ret = k_msgq_put(&user_can0_msgq, &msg, K_NO_WAIT);
+    if (ret != 0) {
+        DUST_LOG_ERR("pitch can0 put fail ver=%u id=0x%x", static_cast<unsigned>(msg.version), static_cast<unsigned>(msg.tx_id));
+    }
 }
 
 /**
- * @brief 两台 pitch 是否都处于使能态
- * @return true=都已使能
+ * @brief 上 pitch 是否处于使能态
+ * @return true=已使能
  */
-bool BothEnabled()
+bool Enabled()
 {
-    return up_pitch_motor_.ReadAll().err == DmErrorStatus::Enable
-        && down_pitch_motor_.ReadAll().err == DmErrorStatus::Enable;
+    return up_pitch_motor_.ReadAll().err == DmErrorStatus::Enable;
 }
 
 /**
- * @brief 使能两台 pitch：清错误 → 等 1s → 读状态确认 → 使能 → 等 1s
+ * @brief 使能上 pitch：清错误 → 等 1s → 读状态确认 → 使能 → 等 1s
  * @return true=已使能；false=清错未生效或使能失败
  */
-bool EnableBoth()
+bool Enable()
 {
     uint8_t frame[8];
 
-    const DmMotor::Snapshot up   = up_pitch_motor_  .ReadAll();
-    const DmMotor::Snapshot down = down_pitch_motor_.ReadAll();
+    const DmMotor::Snapshot up = up_pitch_motor_.ReadAll();
 
-    DUST_LOG_WRN("pitch not enabled: up=%d down=%d, clearing err", static_cast<int>(up.err), static_cast<int>(down.err));
+    DUST_LOG_WRN("pitch not enabled: up=%d, clearing err", static_cast<int>(up.err));
 
-    up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::ClearErr);
-    SendCmd(kUpPitchCanId, frame);
-    down_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::ClearErr);
-    SendCmd(kDownPitchCanId, frame);
-    k_msleep(kSettleMs);
+    if (up.err != DmErrorStatus::Enable) {
+        up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::ClearErr);
+        SendCmd(kUpPitchCanId, frame);
+        k_msleep(kSettleMs);
 
-    // 读回状态：清错没生效就不发使能
-    const DmMotor::Snapshot up_after   = up_pitch_motor_  .ReadAll();
-    const DmMotor::Snapshot down_after = down_pitch_motor_.ReadAll();
+        up_pitch_motor_.SetTargetTorque(0.0f);
+        up_pitch_motor_.PackCtrlFrame(frame);
+        SendCmd(kUpPitchCanId, frame);
+        k_msleep(kSettleMs);
 
-    if (up_after.err != DmErrorStatus::Disable || down_after.err != DmErrorStatus::Disable) {
-        DUST_LOG_ERR("pitch clear err failed: up=%d down=%d", static_cast<int>(up_after.err), static_cast<int>(down_after.err));
-        return false;
+        const DmMotor::Snapshot up_after = up_pitch_motor_.ReadAll();
+
+        if (up_after.err != DmErrorStatus::Disable) {
+            DUST_LOG_ERR("up pitch clear err failed: err=%d", static_cast<int>(up_after.err));
+            return false;
+        }
+
+        up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::Enable);
+        SendCmd(kUpPitchCanId, frame);
+        k_msleep(kSettleMs);
     }
 
-    up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::Enable);
-    SendCmd(kUpPitchCanId, frame);
-    down_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::Enable);
-    SendCmd(kDownPitchCanId, frame);
-    k_msleep(kSettleMs);
-
-    return BothEnabled();
+    return Enabled();
 }
 
 /**
  * @brief 下发设零并等 1s 停稳
- * @param up  true=上 pitch，false=下 pitch
  */
-void SaveZero(bool up)
+void SaveZero()
 {
     uint8_t frame[8];
 
-    if (up) {
-        up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::SaveZero);
-        SendCmd(kUpPitchCanId, frame);
-        DUST_LOG_INF("up pitch save zero");
-        k_msleep(kSettleMs);
-        up_pitch_motor_.ResetEncoder();
-    } else {
-        down_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::SaveZero);
-        SendCmd(kDownPitchCanId, frame);
-        DUST_LOG_INF("down pitch save zero");
-        k_msleep(kSettleMs);
-        down_pitch_motor_.ResetEncoder();
-    }
+    up_pitch_motor_.PackCmdFrame(frame, DmMotor::Cmd::SaveZero);
+    SendCmd(kUpPitchCanId, frame);
+    DUST_LOG_INF("up pitch save zero");
+    k_msleep(kSettleMs);
+    up_pitch_motor_.ResetEncoder();
 }
 
 } // namespace instance::pitch

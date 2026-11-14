@@ -13,6 +13,7 @@
 
 #include <cstdint>
 #include "dm.hpp"
+#include "angle.hpp"
 
 namespace instance::yaw {
 
@@ -24,6 +25,8 @@ constexpr uint16_t kSmallYawMasterId = 0x13;
 
 constexpr float kGearRatio = 10.0f;		// J4310-2EC 内置减速箱 10:1，同步带 1:1
 constexpr float kControlDT = 0.001f;	// 控制周期 s（Task 1ms）
+
+constexpr uint32_t kCanGapMs = 1000;		// 同一路 CAN 上两台电机命令之间的间隔
 
 inline DmMotor big_yaw_motor_{};
 inline DmMotor small_yaw_motor_{};

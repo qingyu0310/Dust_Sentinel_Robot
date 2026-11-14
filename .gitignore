@@ -16,6 +16,9 @@ temp/
 # 辨识采集数据与曲线
 ident_capture.csv
 ident_curve.png
+pitch_ident_capture.csv
+pitch_gravity_check*.csv
+pitch_sweep_capture*.csv
 
 # 本地配置
 *.local.json

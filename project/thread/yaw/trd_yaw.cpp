@@ -2,7 +2,7 @@
  * @file trd_yaw.cpp
  * @author qingyu
  * @brief 双 yaw 达妙电机初始化与反馈接入
- * @version 0.1
+ * @version 0.2
  * @date 2026-11-13
  *
  * @copyright Copyright (c) 2026
@@ -18,6 +18,7 @@
 #include "Irq_handlers.h"
 #include "remote_to.hpp"
 #include "imu_to.hpp"
+#include "angle.hpp"
 #include "pid.hpp"
 #include "log.hpp"
 #include "var.hpp"
@@ -25,19 +26,26 @@
 namespace thread::yaw {
 
 using namespace instance::yaw;
+using namespace alg::math;
 
 static Thread<1024> thread_{};
 
-static Coop coop_ {};					// 大小 yaw 世界角分配
-static bool coop_ready_ = false;		// 已用当前姿态初始化
+static Coop coop_ {};								// 大小 yaw 世界角分配
+static bool coop_ready_ = false;					// 已用当前姿态初始化
 
-static alg::pid::Pid big_pid_   {};		// 大 yaw 关节角环
-static alg::pid::Pid small_pid_ {};		// 小 yaw 关节角环
+static alg::pid::Pid big_pid_   {};					// 大 yaw 关节角环
+static alg::pid::Pid small_pid_ {};					// 小 yaw 关节角环
 
-static float g_test_torque = 0.4f;		// 方向测试力矩 N*m（var 可调）
+static bool g_set_zero_big   = false;				// 大 yaw 设零请求，执行后自清
+static bool g_set_zero_small = false;				// 小 yaw 设零请求，执行后自清
 
-static bool g_set_zero_big   = false;	// 大 yaw 设零请求，执行后自清
-static bool g_set_zero_small = false;	// 小 yaw 设零请求，执行后自清
+static constexpr uint32_t kImuTimeoutMs    = 20;	// IMU 话题超时，超过即判停更
+static constexpr uint32_t kRemoteTimeoutMs = 100;	// 遥控话题超时，超过即判失联
+
+static topic::remote_to::Message remote_    {};		// 遥控最新状态，读失败保留旧值
+static topic::imu_to::Message    imu_msg_   {};		// IMU 最新状态，读失败保留旧值
+static uint32_t                  remote_ms_ = 0;	// 遥控最近一次读取成功时刻
+static uint32_t                  imu_ms_    = 0;	// IMU 最近一次读取成功时刻
 
 /**
  * @brief Retry 钩子：设零与未使能恢复，阻塞等待停稳
@@ -48,7 +56,44 @@ static bool OnRetry(void* context)
 {
     (void)context;
 
-    if (g_set_zero_big) 
+    const uint32_t now = k_uptime_get_32();
+
+    const bool remote_alive = (remote_ms_ != 0) && (now - remote_ms_ < kRemoteTimeoutMs);
+    const bool imu_alive    = (imu_ms_    != 0) && (now - imu_ms_    < kImuTimeoutMs);
+
+    if (!remote_alive || remote_.robot_ctrl == topic::remote_to::StartMode::Off) 
+	{
+        uint8_t frame[8];
+
+        big_yaw_motor_.PackCmdFrame(frame, DmMotor::Cmd::Disable);
+        SendCmd(kBigYawCanId, frame);
+
+        k_msleep(kCanGapMs);
+
+        small_yaw_motor_.PackCmdFrame(frame, DmMotor::Cmd::Disable);
+        SendCmd(kSmallYawCanId, frame);
+
+        coop_ready_ = false;		// 重新开启时用当前姿态重建参考
+        return true;
+    }
+
+    if (!imu_alive) {
+        uint8_t frame[8];
+
+        big_yaw_motor_.SetTargetTorque(0.0f);
+        big_yaw_motor_.PackCtrlFrame(frame);
+        SendCmd(kBigYawCanId, frame);
+
+        k_msleep(kCanGapMs);
+
+        small_yaw_motor_.SetTargetTorque(0.0f);
+        small_yaw_motor_.PackCtrlFrame(frame);
+        SendCmd(kSmallYawCanId, frame);
+
+        return true;
+    }
+
+    if (g_set_zero_big)
 	{
         g_set_zero_big = false;
         SaveZero(true);
@@ -62,7 +107,7 @@ static bool OnRetry(void* context)
         return true;
     }
 
-    if (!BothEnabled()) 
+    if (!BothEnabled())
 	{
         if (EnableBoth()) {
             DUST_LOG_INF("yaw re-enabled");
@@ -81,34 +126,23 @@ static TaskResult Task(void* context)
 {
     (void)context;
 
-    // 订阅遥控与 IMU 话题
-    static topic::remote_to::Message remote {};
-    static topic::imu_to::Message    imu_msg {};
+    // 直接读话题：每拍取最新状态，不积压历史通知；读失败保留上一帧值
+    const uint32_t now = k_uptime_get_32();
 
-    const zbus_channel* chan = nullptr;
-
-    if (zbus_sub_wait(&sub_remote_to, &chan, K_NO_WAIT) == 0 && chan != nullptr) {
-        zbus_chan_read(chan, &remote, K_NO_WAIT);
+    if (zbus_chan_read(&pub_remote_to, &remote_, K_NO_WAIT) == 0) {
+        remote_ms_ = now;
     }
 
-    chan = nullptr;
-
-    if (zbus_sub_wait(&sub_imu_to,    &chan, K_NO_WAIT) == 0 && chan != nullptr) {
-        zbus_chan_read(chan, &imu_msg, K_NO_WAIT);
+    if (zbus_chan_read(&pub_imu_to,    &imu_msg_, K_NO_WAIT) == 0) {
+        imu_ms_ = now;
     }
 
-    // 整车关闭：两台电机直接失能（先于使能检查，避免 OnRetry 重新使能）
-    if (remote.robot_ctrl == topic::remote_to::StartMode::Off) {
-        uint8_t frame[8];
+    // 输入超时或整车关闭：处置交给 OnRetry
+    const bool remote_alive = (remote_ms_ != 0) && (now - remote_ms_ < kRemoteTimeoutMs);
+    const bool imu_alive    = (imu_ms_    != 0) && (now - imu_ms_    < kImuTimeoutMs);
 
-        big_yaw_motor_.PackCmdFrame(frame, DmMotor::Cmd::Disable);
-        SendCmd(kBigYawCanId, frame);
-
-        small_yaw_motor_.PackCmdFrame(frame, DmMotor::Cmd::Disable);
-        SendCmd(kSmallYawCanId, frame);
-
-        coop_ready_ = false;		// 重新开启时用当前姿态重建参考
-        return TaskResult::Continue;
+    if (!remote_alive || remote_.robot_ctrl == topic::remote_to::StartMode::Off || !imu_alive) {
+        return TaskResult::Retry;
     }
 
     if (g_set_zero_big || g_set_zero_small || !BothEnabled()) {
@@ -120,9 +154,9 @@ static TaskResult Task(void* context)
 
     // 达妙反馈已是输出轴角度与角速度；大 yaw 逆时针为负，取反统一成逆时针为正
     // 多圈累计值归一化到 [-π, π]
-    const float big_joint   = Coop::Wrap(-big.radian);
-    const float small_joint = Coop::Wrap(small.radian);
-    const float world_yaw   = Coop::Wrap(imu_msg.yaw * 0.01745329252f); // IMU 发布单位为度，转为 rad
+    const float big_joint   = WrapRad(-big.radian);
+    const float small_joint = WrapRad(small.radian);
+    const float world_yaw   = WrapRad(imu_msg_.yaw * kDegToRad); // IMU 发布单位为度，转为 rad
 
     // 首拍用当前姿态建立协同参考
     if (!coop_ready_) {
@@ -135,13 +169,13 @@ static TaskResult Task(void* context)
     float small_target = 0.0f;
     float world_target = 0.0f;
 
-    coop_.Update(remote.yaw, world_yaw, big_joint, small_joint, kControlDT, big_target, small_target, world_target);
+    coop_.Update(remote_.yaw, world_yaw, big_joint, small_joint, kControlDT, big_target, small_target, world_target);
 
     // 大轴闭环关节角误差；小轴闭环世界角误差（与参考实现一致），PID 目标恒为 0
-    const float big_err   = Coop::Wrap(big_joint   - big_target);
-    const float small_err = Coop::Wrap(world_yaw   - world_target);
+    const float big_err   = WrapRad(big_joint   - big_target);
+    const float small_err = WrapRad(world_yaw   - world_target);
 
-    const float big_torque   = big_pid_.Calc(0.0f, big_err);
+    const float big_torque   = big_pid_  .Calc(0.0f, big_err);
     const float small_torque = small_pid_.Calc(0.0f, small_err);
 
     // 大 yaw 物理方向相反，输出取反
@@ -154,10 +188,6 @@ static TaskResult Task(void* context)
     small_yaw_motor_.SetTargetTorque(small_torque);
     small_yaw_motor_.PackCtrlFrame(frame);
     SendCmd(kSmallYawCanId, frame);
-
-    DUST_LOG_DBG("yaw_angle", "%.2f,%.2f,%.3f,%.3f",
-                 static_cast<double>(big_joint), static_cast<double>(small_joint),
-                 static_cast<double>(big_err), static_cast<double>(small_err));
 
     return TaskResult::Continue;
 }
@@ -196,11 +226,6 @@ static bool thread_init()
     big_pid_.Init(pid_cfg);
     small_pid_.Init(pid_cfg);
 
-    // 先使能一次；失败只告警，由 Task 的 Retry 流程继续重试
-    if (!EnableBoth()) {
-        DUST_LOG_WRN("yaw enable failed at init, will retry in thread");
-    }
-
     DUST_LOG_INF("yaw ready: big CAN1 0x01/0x11, small CAN0 0x03/0x13");
 
     return true;
@@ -219,9 +244,8 @@ static bool thread_start()
 CAN_RX_HANDLER(USER_RX_CAN0, kSmallYawMasterId, [](uint8_t* data) { small_yaw_motor_.CanCpltRxCallback(data); });
 CAN_RX_HANDLER(USER_RX_CAN1, kBigYawMasterId,   [](uint8_t* data) { big_yaw_motor_  .CanCpltRxCallback(data); });
 
-REGISTER_SHELL_VAR("yaw_zero_big", g_set_zero_big);
+REGISTER_SHELL_VAR("yaw_zero_big",   g_set_zero_big);
 REGISTER_SHELL_VAR("yaw_zero_small", g_set_zero_small);
-REGISTER_SHELL_VAR("yaw_test_torque", g_test_torque);
 
 REGISTER_INIT(thread_init, MidInit, High, HaltOnFail, nullptr, "yaw_init");
 REGISTER_THREAD(thread_start, MidThread, ContinueOnFail, "yaw_start");
