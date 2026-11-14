@@ -69,7 +69,7 @@ static bool OnRetry(void* context)
 {
     (void)context;
 
-    const uint32_t now = k_cyc_to_ms_floor32(k_cycle_get_32());
+    const uint32_t now = k_uptime_get_32();
 
     const bool remote_alive = (remote_ms_ != 0) && (now - remote_ms_ < kRemoteTimeoutMs);
 
@@ -113,18 +113,17 @@ static TaskResult Task(void* context)
 {
     (void)context;
 
-    // 本拍时基只取一次：cycle 算控制周期，同一时刻换算成毫秒做话题超时判断
+    // cycle 只用于相邻两拍求差算控制周期，不回绕成绝对时间
     float dt = 0.001f;
 
-    const auto kMeasureClock = [&]()
+    const auto kMeasureDT = [&]()
     {
         static uint32_t last_cycle = 0;
-        const  uint32_t now_cycle  = k_cycle_get_32();
+        const uint32_t now_cycle = k_cycle_get_32();
 
         // 用真实经过时间算控制周期，避免 D 项按固定 1ms 计算而虚高数倍
         dt = 0.001f;
-        if (last_cycle != 0) 
-		{
+        if (last_cycle != 0) {
             const uint64_t delta_ns = k_cyc_to_ns_floor64(now_cycle - last_cycle);
             if (delta_ns != 0) {
                 // Retry 路径会阻塞 1s，钳位避免单拍积分突跳
@@ -132,11 +131,12 @@ static TaskResult Task(void* context)
             }
         }
         last_cycle = now_cycle;
-
-        return k_cyc_to_ms_floor32(now_cycle);
     };
 
-    const uint32_t now = kMeasureClock();
+    kMeasureDT();
+
+    // 话题超时用内核累计毫秒，单调递增不受硬件计数器回绕影响
+    const uint32_t now = k_uptime_get_32();
 
     // 直接读话题：每拍取最新状态，不积压历史通知；读失败保留上一帧值
 
@@ -239,6 +239,7 @@ CAN_RX_HANDLER(USER_RX_CAN0, kUpPitchMasterId,   [](uint8_t* data) { up_pitch_mo
 REGISTER_SHELL_VAR("pitch_zero_up",   g_set_zero_up);
 REGISTER_SHELL_VAR("pitch_up_gscale", gravity_scale_);
 REGISTER_SHELL_VAR("pitch_up_target", target_deg_);
+
 REGISTER_SHELL_VAR("pitch_up_kp",     up_pid_.GetKp());
 REGISTER_SHELL_VAR("pitch_up_ki",     up_pid_.GetKi());
 REGISTER_SHELL_VAR("pitch_up_kd",     up_pid_.GetKd());
